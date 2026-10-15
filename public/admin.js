@@ -80,11 +80,14 @@
       const action = document.createElement("button");
       action.type = "button";
       action.className = "button button-small";
-      action.textContent = deal.status === "draft" ? "Activate" :
-        deal.status === "scheduled" ? "Activate" :
+      const futureStart = deal.starts_at && new Date(deal.starts_at).getTime() > Date.now();
+      const scheduleDraft = deal.status === "draft" && futureStart;
+      action.textContent = scheduleDraft ? "Schedule" :
+        deal.status === "draft" ? "Activate" :
+        deal.status === "scheduled" ? "Scheduled" :
         deal.status === "active" ? "Cancel" : "—";
-      const nextStatus = deal.status === "active" ? "cancelled" : "active";
-      action.disabled = !["draft", "scheduled", "active"].includes(deal.status);
+      const nextStatus = deal.status === "active" ? "cancelled" : scheduleDraft ? "scheduled" : "active";
+      action.disabled = !["draft", "active"].includes(deal.status);
       action.addEventListener("click", async () => {
         action.disabled = true;
         try {
