@@ -432,7 +432,7 @@ app.get("/api/deals", asyncRoute(async (req, res) => {
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
   const [deals] = await getDatabase().execute(
-    `SELECT id, title, shopify_product_id, status, pricing_mode,
+    `SELECT id, title, shopify_product_id, shopify_product_handle, status, pricing_mode,
             target_quantity, current_quantity, retail_price, wholesale_price,
             group_price, currency, starts_at, ends_at, created_at
      FROM group_deals
