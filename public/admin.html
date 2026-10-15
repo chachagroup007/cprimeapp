@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="shopify-api-key" content="">
+  <title>ChachaPrime Group Deals</title>
+  <link rel="stylesheet" href="/admin.css">
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <script defer src="/admin.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-mark">CP</div>
+      <div><p class="eyebrow">CHACHAPRIME COMMERCE</p><h1>Group buying</h1></div>
+      <button id="refresh" class="button button-quiet" type="button">Refresh</button>
+    </header>
+    <section class="intro">
+      <p class="eyebrow">DEAL MANAGEMENT</p>
+      <h2>Turn product demand into group savings.</h2>
+      <p>Create a deal, set the target quantity and group price, then activate it when you're ready.</p>
+    </section>
+    <section class="stats" aria-label="Deal summary">
+      <article class="stat"><span>Total deals</span><strong id="stat-total">—</strong></article>
+      <article class="stat"><span>Active</span><strong id="stat-active">—</strong></article>
+      <article class="stat"><span>Units joined</span><strong id="stat-units">—</strong></article>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><p class="eyebrow">NEW OFFER</p><h2>Create a group deal</h2></div></div>
+      <form id="deal-form" class="form-grid">
+        <label class="wide">Shopify product ID
+          <input name="shopify_product_id" required inputmode="numeric" placeholder="e.g. 8123456789012">
+          <small>Use the numeric product ID from Shopify Admin.</small>
+        </label>
+        <label>Group price
+          <input name="group_price" type="number" min="0.01" step="0.01" required placeholder="19.99">
+        </label>
+        <label>Target quantity
+          <input name="target_quantity" type="number" min="1" step="1" required placeholder="50">
+        </label>
+        <label>Currency
+          <select name="currency"><option value="USD">USD — US Dollar</option><option value="GBP">GBP — Pound Sterling</option><option value="EUR">EUR — Euro</option><option value="CNY">CNY — Chinese Yuan</option></select>
+        </label>
+        <label>Pricing mode
+          <select name="pricing_mode"><option value="per_buyer">Per buyer</option><option value="per_unit">Per unit</option></select>
+        </label>
+        <label>Start date (optional)
+          <input name="starts_at" type="datetime-local">
+        </label>
+        <label>End date
+          <input name="ends_at" type="datetime-local" required>
+        </label>
+        <div class="wide actions"><button class="button" type="submit">Create draft</button><span id="form-status" role="status"></span></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><p class="eyebrow">YOUR STORE</p><h2>Group deals</h2></div><span id="store-label" class="store-label">Connecting…</span></div>
+      <div id="notice" class="notice" role="status">Connecting to Shopify…</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Deal</th><th>Status</th><th>Progress</th><th>Group price</th><th>Ends</th><th>Action</th></tr></thead>
+          <tbody id="deals-body"><tr><td colspan="6" class="empty">Loading deals…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <footer>ChachaPrime · Group buying management</footer>
+  </main>
+</body>
+</html>
