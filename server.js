@@ -395,7 +395,21 @@ async function shopifyGraphql(shop, query, variables = {}) {
 
 app.use("/api/admin", createAdminRouter({ getDatabase, shopifyGraphql }));
 
+async function refreshDealStatuses() {
+  const database = getDatabase();
+  await database.execute(
+    "UPDATE group_deals SET status = 'active' WHERE status = 'scheduled' AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP()) AND ends_at > UTC_TIMESTAMP()",
+  );
+  await database.execute(
+    "UPDATE group_deals SET status = 'successful' WHERE status = 'active' AND current_quantity >= target_quantity",
+  );
+  await database.execute(
+    "UPDATE group_deals SET status = CASE WHEN current_quantity >= target_quantity THEN 'successful' ELSE 'failed' END WHERE status IN ('active','scheduled') AND ends_at <= UTC_TIMESTAMP()",
+  );
+}
+
 app.get("/api/deals", asyncRoute(async (req, res) => {
+  await refreshDealStatuses();
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
   const [deals] = await getDatabase().execute(
@@ -415,6 +429,7 @@ app.get("/api/deals", asyncRoute(async (req, res) => {
 }));
 
 app.get("/api/deals/:id", asyncRoute(async (req, res) => {
+  await refreshDealStatuses();
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
   if (!/^[1-9]\d{0,19}$/.test(req.params.id)) {
