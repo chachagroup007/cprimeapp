@@ -313,8 +313,8 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
           const refundQuantity = Math.max(0, Math.floor(Number(refundItem.quantity) || 0));
           if (!productId || !refundQuantity) continue;
           const [deals] = await connection.execute(
-            "SELECT id FROM group_deals WHERE shop_domain = ? AND shopify_product_id = ?",
-            [shop, productId],
+            "SELECT gd.id FROM group_deals gd WHERE gd.shop_domain = ? AND gd.shopify_product_id = ? AND EXISTS (SELECT 1 FROM group_members gm WHERE gm.deal_id = gd.id AND gm.shopify_order_id = ?)",
+            [shop, productId, orderId],
           );
           for (const deal of deals) {
             const [members] = await connection.execute(
