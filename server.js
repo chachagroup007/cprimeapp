@@ -186,9 +186,7 @@ app.get("/auth", asyncRoute(async (req, res) => {
     .split(",").map((scope) => scope.trim()).filter(Boolean).join(",");
   const state = crypto.randomBytes(32).toString("hex");
 
-  res.cookie("cp_oauth_state", state, {
-    httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 10 * 60 * 1000,
-  });
+  res.setHeader("Set-Cookie", "cp_oauth_state=" + encodeURIComponent(state) + "; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax");
   const target = new URL(`https://${shop}/admin/oauth/authorize`);
   target.searchParams.set("client_id", apiKey);
   target.searchParams.set("scope", scopes);
@@ -267,7 +265,7 @@ app.get("/auth/callback", asyncRoute(async (req, res) => {
     return res.status(400).send("Shopify callback signature is invalid.");
   }
   const stateCookie = parseCookies(req.headers.cookie).cp_oauth_state;
-  res.clearCookie("cp_oauth_state", { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+  res.setHeader("Set-Cookie", "cp_oauth_state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax");
   if (!stateCookie || !safeEqual(stateCookie, req.query.state)) {
     return res.status(400).send("OAuth state validation failed. Please retry installation.");
   }
