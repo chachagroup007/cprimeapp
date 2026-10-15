@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS group_deals (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   shop_domain VARCHAR(255) NOT NULL,
   shopify_product_id VARCHAR(64) NOT NULL,
+  shopify_product_handle VARCHAR(255) NOT NULL,
   title VARCHAR(255) NOT NULL,
   status ENUM('draft','scheduled','active','successful','failed','cancelled') NOT NULL DEFAULT 'draft',
   pricing_mode ENUM('per_buyer','per_unit') NOT NULL DEFAULT 'per_buyer',
