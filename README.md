@@ -26,6 +26,18 @@ See `.env.example`. Never commit a real `.env` file or paste secrets into issues
 - `ALLOWED_ORIGINS`: exact storefront origins allowed by browser CORS.
 - `SHOPIFY_STORE_DOMAIN`: default store domain for setup/reference; OAuth validates each installation's shop domain separately.
 
+## Hostinger deployment checklist
+
+1. Deploy the `main` branch of this repository as the Node.js app; use the package scripts `npm ci` and `npm start`.
+2. In Hostinger environment variables, enter real values for `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`, `SHOPIFY_APP_URL`, and `ALLOWED_ORIGINS`. Never use the random example string shown in a generic form as a credential.
+3. `PORT` is normally supplied by the hosting platform; if Hostinger requires a value, use the port assigned by that platform rather than assuming a public port.
+4. Create the MySQL database and user in Hostinger, then import `database/schema.sql` into that database before opening `/ready`.
+5. Set `SHOPIFY_APP_URL=https://app.chachaprime.com`; set `ALLOWED_ORIGINS` to the exact storefront origins, comma-separated, such as `https://chachaprime.com,https://www.chachaprime.com`.
+6. Verify `/health` and `/ready` after deployment. A successful `/health` alone does not prove the database is connected.
+7. Configure the Shopify app's URL, OAuth redirect URL, scopes, and webhook subscriptions, then install it on a development store before using live customer traffic.
+
+The `SHOPIFY_STORE_DOMAIN` value is kept for setup/reference; OAuth validates and stores each installed shop independently. Do not paste credentials into GitHub, a public issue, or this chat.
+
 ## Shopify app setup
 
 1. Set the app URL to `https://app.chachaprime.com` and the embedded app path to `/admin`.
