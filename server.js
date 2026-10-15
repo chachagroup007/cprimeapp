@@ -574,6 +574,9 @@ app.get("/api/deals/:id", asyncRoute(async (req, res) => {
 
 app.use((err, _req, res, _next) => {
   console.error("Request failed:", err.code || "UNEXPECTED_ERROR", err.message);
+  if (err.code === "ER_DUP_ENTRY") {
+    return res.status(409).json({ error: "A conflicting record already exists" });
+  }
   if (err.code === "DATABASE_CONFIG_MISSING" || err.code === "APP_CONFIG_MISSING") {
     return res.status(503).json({ error: "Service is not configured yet" });
   }
