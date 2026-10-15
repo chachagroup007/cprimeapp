@@ -180,7 +180,7 @@ app.get("/auth", asyncRoute(async (req, res) => {
   if (!shop) return res.status(400).send("A valid *.myshopify.com shop domain is required.");
 
   const apiKey = requiredEnv("SHOPIFY_API_KEY");
-  const secret = requiredEnv("SHOPIFY_API_SECRET");
+  requiredEnv("SHOPIFY_API_SECRET");
   const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\/$/, "");
   const scopes = (process.env.SHOPIFY_SCOPES || "read_products,read_orders,write_orders")
     .split(",").map((scope) => scope.trim()).filter(Boolean).join(",");
@@ -194,8 +194,6 @@ app.get("/auth", asyncRoute(async (req, res) => {
   target.searchParams.set("scope", scopes);
   target.searchParams.set("redirect_uri", `${appUrl}/auth/callback`);
   target.searchParams.set("state", state);
-  // OAuth callback uses HMAC and state validation; secret is intentionally not returned.
-  void secret;
   return res.redirect(302, target.toString());
 }));
 
