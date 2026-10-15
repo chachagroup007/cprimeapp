@@ -340,6 +340,25 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
           }
         }
       }
+    } else if (topic === "customers/redact") {
+      const customerId = payload.customer?.id ? String(payload.customer.id) : "";
+      if (customerId) {
+        await connection.execute(
+          "DELETE FROM group_members WHERE shopify_customer_id = ? AND deal_id IN (SELECT id FROM group_deals WHERE shop_domain = ?)",
+          [customerId, shop],
+        );
+      }
+    } else if (topic === "customers/data_request") {
+      // Acknowledge the verified request. Customer identifiers are not exposed by public APIs.
+      console.info("Received verified customer data request for", shop);
+    } else if (topic === "shop/redact") {
+      await connection.execute(
+        "DELETE FROM group_members WHERE deal_id IN (SELECT id FROM group_deals WHERE shop_domain = ?)",
+        [shop],
+      );
+      await connection.execute("DELETE FROM group_deals WHERE shop_domain = ?", [shop]);
+      await connection.execute("DELETE FROM shop_installations WHERE shop_domain = ?", [shop]);
+      await connection.execute("DELETE FROM shopify_webhook_events WHERE shop_domain = ?", [shop]);
     } else if (topic === "app/uninstalled") {
       await connection.execute(
         "DELETE FROM shop_installations WHERE shop_domain = ?",
