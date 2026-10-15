@@ -1,19 +1,19 @@
 # ChachaPrime Group Buying App
 
-Node.js/Express backend for the ChachaPrime Shopify group-buying workflow.
+Node.js/Express backend and embedded administration starter for the ChachaPrime Shopify group-buying workflow.
 
 ## Current features
 
-- Health endpoint: `GET /health`
-- Database readiness endpoint: `GET /ready`
-- Public active-deal endpoints: `GET /api/deals` and `GET /api/deals/:id`
-- Shopify OAuth installation callback with HMAC and state validation
-- Encrypted offline Shopify access-token storage in MySQL
-- Verified Shopify webhook endpoint with event deduplication
-- Initial order-paid/refund webhook processing for matching group deals
-- Protected Shopify session-token API for listing, creating, and changing deal status
-- Automated tests for Shopify session token validation
-- CI workflow runs syntax checks and tests
+- Process health and database readiness endpoints
+- Store-scoped public deal listing and single-deal API
+- Shopify OAuth installation with HMAC and state validation
+- Encrypted offline access-token storage in MySQL
+- Embedded admin dashboard shell using Shopify App Bridge
+- Protected admin API for listing, creating, activating, scheduling, and cancelling deals
+- Product validation against the Shopify Admin GraphQL API before a deal is created
+- Verified, deduplicated Shopify webhook handling for paid orders, refunds, app uninstall, and privacy requests
+- Partial-refund quantity tracking and deal target/expiry status refresh
+- Automated token-validation tests and GitHub Actions syntax/test workflow
 
 ## Required environment variables
 
@@ -22,37 +22,43 @@ See `.env.example`. Never commit a real `.env` file or paste secrets into issues
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: Hostinger MySQL connection.
 - `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`: credentials for the Shopify app.
 - `SHOPIFY_APP_URL`: app base URL, e.g. `https://app.chachaprime.com`.
-- `SHOPIFY_SCOPES`: start with `read_products,read_orders` for the current implementation.
+- `SHOPIFY_SCOPES`: `read_products,read_orders` for the current implementation.
 - `ALLOWED_ORIGINS`: exact storefront origins allowed by browser CORS.
-- `SHOPIFY_STORE_DOMAIN`: default store domain for setup/reference; each OAuth installation validates the shop domain separately.
+- `SHOPIFY_STORE_DOMAIN`: default store domain for setup/reference; OAuth validates each installation's shop domain separately.
 
 ## Shopify app setup
 
-1. Set the app URL to `https://app.chachaprime.com`.
+1. Set the app URL to `https://app.chachaprime.com` and the embedded app path to `/admin`.
 2. Add the allowed redirect URL `https://app.chachaprime.com/auth/callback`.
-3. Configure the app's OAuth scopes to match `SHOPIFY_SCOPES`.
-4. Configure webhook subscriptions that point to `https://app.chachaprime.com/webhooks/orders/paid`, `https://app.chachaprime.com/webhooks/refunds/create`, and `https://app.chachaprime.com/webhooks/app/uninstalled`.
+3. Configure app scopes to match `SHOPIFY_SCOPES`.
+4. Subscribe to these webhook topics and point each to the matching URL on `https://app.chachaprime.com`: `orders/paid`, `refunds/create`, `app/uninstalled`, `customers/data_request`, `customers/redact`, and `shop/redact`.
 5. Run `database/schema.sql` against the Hostinger database before using the app.
 6. Run `npm ci`, `npm run check`, and `npm test` before deploying.
+
+Creating webhook routes does not automatically register subscriptions. Verify the configured topics and callback URL in Shopify before testing orders.
 
 ## API overview
 
 ### Public
-- `GET /health` — process health only; does not prove database connectivity.
+- `GET /health` — process health only.
 - `GET /ready` — verifies database connectivity.
-- `GET /api/deals` — list active, in-window deals.
-- `GET /api/deals/:id` — fetch one active, in-window deal.
+- `GET /api/deals?shop=your-store.myshopify.com` — list active deals for one store.
+- `GET /api/deals/:id?shop=your-store.myshopify.com` — fetch one active deal for that store.
 
 ### Shopify installation
 - `GET /auth?shop=your-store.myshopify.com` — begin OAuth.
 - `GET /auth/callback` — validates HMAC and state, exchanges code, and stores an encrypted offline token.
+- `GET /admin?shop=your-store.myshopify.com&host=...` — embedded admin UI; must be opened inside Shopify Admin.
 
 ### Shopify webhooks
 - `POST /webhooks/orders/paid`
 - `POST /webhooks/refunds/create`
 - `POST /webhooks/app/uninstalled`
+- `POST /webhooks/customers/data_request`
+- `POST /webhooks/customers/redact`
+- `POST /webhooks/shop/redact`
 
-Webhook requests must include valid Shopify HMAC and webhook headers. Configure subscriptions in Shopify; creating these routes does not subscribe the app automatically.
+Webhook requests must include valid Shopify HMAC and webhook headers. Subscribe to each topic in Shopify.
 
 ### Protected admin API
 Send a short-lived Shopify App Bridge session token as `Authorization: Bearer <session-token>`.
@@ -60,8 +66,8 @@ Send a short-lived Shopify App Bridge session token as `Authorization: Bearer <s
 - `POST /api/admin/deals`
 - `PATCH /api/admin/deals/:id/status`
 
-## Important limitations before production
+## Remaining production work
 
-This repository is an evolving integration and must be tested in a Shopify development store before live use. The current code does not yet provide a complete embedded Admin UI/App Bridge frontend, automated webhook subscription registration, automatic deal-expiry/target-quantity transitions, full refund/partial-refund reconciliation, full end-to-end order placement, billing, privacy-compliance webhooks, or a comprehensive authorization/integration test suite. Do not represent it as production-ready until these items are implemented and verified.
+This is not yet certified or verified as production-ready. Before a live store uses it, test the complete install, embedded admin, webhook, checkout, refund, privacy, and uninstall flows in a Shopify development store. Additional work may include Shopify billing (if monetized), automated webhook subscription registration, robust partial-refund reconciliation for complex multi-line orders, scheduled background jobs independent of storefront traffic, race-condition and integration tests, monitoring, backups, and review of Shopify's current app distribution and compliance requirements.
 
-Access tokens are encrypted using key material derived from `SHOPIFY_API_SECRET`; rotating that secret requires a planned token re-encryption/reinstallation procedure. Keep backups of the database and keep all secrets in the hosting environment, never in GitHub.
+Access tokens are encrypted using key material derived from `SHOPIFY_API_SECRET`; rotating that secret requires a planned token re-encryption/reinstallation procedure. Keep database backups and all secrets in hosting environment settings, never in GitHub.
