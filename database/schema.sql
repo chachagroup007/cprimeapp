@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS group_members (
   shopify_customer_id VARCHAR(64) NULL,
   shopify_order_id VARCHAR(64) NULL,
   quantity INT UNSIGNED NOT NULL DEFAULT 1,
+  refunded_quantity INT UNSIGNED NOT NULL DEFAULT 0,
   amount DECIMAL(12,2) NOT NULL,
   currency CHAR(3) NOT NULL DEFAULT 'USD',
   status ENUM('pending','paid','cancelled','refunded') NOT NULL DEFAULT 'pending',
