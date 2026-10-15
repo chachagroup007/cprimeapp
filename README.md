@@ -35,7 +35,7 @@ See `.env.example`. Never commit a real `.env` file or paste secrets into issues
 5. Run `database/schema.sql` against the Hostinger database before using the app.
 6. Run `npm ci`, `npm run check`, and `npm test` before deploying.
 
-Creating webhook routes does not automatically register subscriptions. Verify the configured topics and callback URL in Shopify before testing orders.
+The OAuth callback attempts to register subscriptions, but API or permission errors can prevent some topics from being created. Verify all topics and callback URLs in Shopify before testing orders.
 
 ## API overview
 
@@ -58,7 +58,7 @@ Creating webhook routes does not automatically register subscriptions. Verify th
 - `POST /webhooks/customers/redact`
 - `POST /webhooks/shop/redact`
 
-Webhook requests must include valid Shopify HMAC and webhook headers. Subscribe to each topic in Shopify.
+Webhook requests must include valid Shopify HMAC and webhook headers. Confirm the subscriptions are present in Shopify after installation.
 
 ### Protected admin API
 Send a short-lived Shopify App Bridge session token as `Authorization: Bearer <session-token>`.
