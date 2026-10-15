@@ -581,3 +581,12 @@ app.use((err, _req, res, _next) => {
 const port = Number(process.env.PORT || 3000);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port");
 app.listen(port, "0.0.0.0", () => console.log("ChachaPrime API listening on", port));
+
+if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
+  const dealStatusTimer = setInterval(() => {
+    refreshDealStatuses().catch((error) => {
+      console.error("Scheduled deal status refresh failed:", error.code || error.message);
+    });
+  }, 60_000);
+  dealStatusTimer.unref();
+}
