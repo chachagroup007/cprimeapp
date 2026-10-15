@@ -204,6 +204,14 @@ async function registerWebhookSubscriptions(shop, accessToken) {
     "CUSTOMERS_REDACT",
     "SHOP_REDACT",
   ];
+  const paths = {
+    ORDERS_PAID: "orders/paid",
+    REFUNDS_CREATE: "refunds/create",
+    APP_UNINSTALLED: "app/uninstalled",
+    CUSTOMERS_DATA_REQUEST: "customers/data_request",
+    CUSTOMERS_REDACT: "customers/redact",
+    SHOP_REDACT: "shop/redact",
+  };
   const endpoint = "https://" + shop + "/admin/api/2025-10/graphql.json";
   const headers = {
     "Content-Type": "application/json",
@@ -225,7 +233,7 @@ async function registerWebhookSubscriptions(shop, accessToken) {
   const errors = [];
 
   for (const topic of topics) {
-    const callbackUrl = appUrl + "/webhooks/" + topic.toLowerCase().replace(/_/g, "/");
+    const callbackUrl = appUrl + "/webhooks/" + paths[topic];
     const found = existing.some((item) => item.topic === topic && item.uri === callbackUrl);
     if (found) continue;
     const response = await fetch(endpoint, {
