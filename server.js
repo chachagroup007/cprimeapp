@@ -153,6 +153,11 @@ function asyncRoute(handler) {
 
 app.use(express.static(path.join(__dirname, "public"), { index: false, dotfiles: "deny", maxAge: "1h" }));
 
+app.get("/", (req, res) => {
+  const query = new URLSearchParams(req.query).toString();
+  return res.redirect(302, "/admin" + (query ? "?" + query : ""));
+});
+
 app.get("/admin", (_req, res) => {
   const html = fs.readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
   const apiKey = String(process.env.SHOPIFY_API_KEY || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
