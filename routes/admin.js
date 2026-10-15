@@ -6,6 +6,14 @@ function createAdminRouter({ getDatabase, shopifyGraphql }) {
 
   router.get("/deals", requireShopifySession, async (req, res, next) => {
     try {
+      await getDatabase().execute(
+        "UPDATE group_deals SET status = 'active' WHERE shop_domain = ? AND status = 'scheduled' AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP()) AND ends_at > UTC_TIMESTAMP()",
+        [req.shopifySession.shop],
+      );
+      await getDatabase().execute(
+        "UPDATE group_deals SET status = CASE WHEN current_quantity >= target_quantity THEN 'successful' ELSE 'failed' END WHERE shop_domain = ? AND status IN ('active','scheduled') AND ends_at <= UTC_TIMESTAMP()",
+        [req.shopifySession.shop],
+      );
       const [deals] = await getDatabase().execute(
         `SELECT id, shopify_product_id, title, status, pricing_mode, target_quantity,
                 current_quantity, retail_price, wholesale_price, group_price, currency,
