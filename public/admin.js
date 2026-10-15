@@ -121,6 +121,7 @@
   const params = new URLSearchParams(location.search); shop = params.get("shop") || "";
   if ($("#settings-store")) $("#settings-store").textContent = shop || "No store domain detected";
   const hash = location.hash.slice(1); if(hash) showView(hash);
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "dashboard"));
   if (!shop.endsWith(".myshopify.com")) {
     setNotice("Open this app from Shopify Admin → Apps using the installed store. Direct browser access cannot create an embedded session.","error");
     if ($("#settings-connection")) { $("#settings-connection").textContent="Not connected"; $("#settings-connection").className="setting-state neutral"; }
