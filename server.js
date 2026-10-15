@@ -182,7 +182,7 @@ app.get("/auth", asyncRoute(async (req, res) => {
   const apiKey = requiredEnv("SHOPIFY_API_KEY");
   requiredEnv("SHOPIFY_API_SECRET");
   const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\/$/, "");
-  const scopes = (process.env.SHOPIFY_SCOPES || "read_products,read_orders,write_orders")
+  const scopes = (process.env.SHOPIFY_SCOPES || "read_products,read_orders")
     .split(",").map((scope) => scope.trim()).filter(Boolean).join(",");
   const state = crypto.randomBytes(32).toString("hex");
 
@@ -196,7 +196,7 @@ app.get("/auth", asyncRoute(async (req, res) => {
 }));
 
 async function registerWebhookSubscriptions(shop, accessToken) {
-  const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\\/$/, "");
+  const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\/$/, "");
   const topics = [
     "ORDERS_PAID",
     "REFUNDS_CREATE",
