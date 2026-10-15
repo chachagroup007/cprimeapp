@@ -31,7 +31,7 @@ See `.env.example`. Never commit a real `.env` file or paste secrets into issues
 1. Set the app URL to `https://app.chachaprime.com` and the embedded app path to `/admin`.
 2. Add the allowed redirect URL `https://app.chachaprime.com/auth/callback`.
 3. Configure app scopes to match `SHOPIFY_SCOPES`.
-4. Subscribe to these webhook topics and point each to the matching URL on `https://app.chachaprime.com`: `orders/paid`, `refunds/create`, `app/uninstalled`, `customers/data_request`, `customers/redact`, and `shop/redact`.
+4. The OAuth callback attempts to register these webhook topics automatically: `orders/paid`, `refunds/create`, `app/uninstalled`, `customers/data_request`, `customers/redact`, and `shop/redact`. Review the Shopify app webhook settings after installation and resolve any registration warnings.
 5. Run `database/schema.sql` against the Hostinger database before using the app.
 6. Run `npm ci`, `npm run check`, and `npm test` before deploying.
 
@@ -68,6 +68,6 @@ Send a short-lived Shopify App Bridge session token as `Authorization: Bearer <s
 
 ## Remaining production work
 
-This is not yet certified or verified as production-ready. Before a live store uses it, test the complete install, embedded admin, webhook, checkout, refund, privacy, and uninstall flows in a Shopify development store. Additional work may include Shopify billing (if monetized), automated webhook subscription registration, robust partial-refund reconciliation for complex multi-line orders, scheduled background jobs independent of storefront traffic, race-condition and integration tests, monitoring, backups, and review of Shopify's current app distribution and compliance requirements.
+This is not yet certified or verified as production-ready. Before a live store uses it, test the complete install, embedded admin, webhook, checkout, refund, privacy, and uninstall flows in a Shopify development store. Additional work may include Shopify billing (if monetized), robust partial-refund reconciliation for complex multi-line orders, scheduled background jobs independent of storefront traffic, race-condition and integration tests, monitoring, backups, and review of Shopify's current app distribution and compliance requirements.
 
 Access tokens are encrypted using key material derived from `SHOPIFY_API_SECRET`; rotating that secret requires a planned token re-encryption/reinstallation procedure. Keep database backups and all secrets in hosting environment settings, never in GitHub.
