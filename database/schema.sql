@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS group_members (
   joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_deal_order(deal_id,shopify_order_id),
   INDEX idx_members_deal_status(deal_id,status),
+  INDEX idx_members_order(shopify_order_id),
   CONSTRAINT fk_members_deal FOREIGN KEY(deal_id) REFERENCES group_deals(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
