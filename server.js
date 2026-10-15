@@ -166,7 +166,7 @@ app.get("/admin", (_req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.status(200).json({ ok: true, service: "chachaprime-group-buying", version: "0.3.0" });
+  res.status(200).json({ ok: true, service: "chachaprime-group-buying", version: "0.4.0" });
 });
 
 app.get("/ready", asyncRoute(async (_req, res) => {
