@@ -277,7 +277,7 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
            WHERE shop_domain = ? AND shopify_product_id = ? AND status = 'active'
              AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
              AND ends_at > UTC_TIMESTAMP()
-           ORDER BY created_at ASC FOR UPDATE`,
+           ORDER BY created_at ASC LIMIT 1 FOR UPDATE`,
           [shop, productId],
         );
         for (const deal of deals) {
