@@ -194,6 +194,62 @@ app.get("/auth", asyncRoute(async (req, res) => {
   return res.redirect(302, target.toString());
 }));
 
+async function registerWebhookSubscriptions(shop, accessToken) {
+  const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\\/$/, "");
+  const topics = [
+    "ORDERS_PAID",
+    "REFUNDS_CREATE",
+    "APP_UNINSTALLED",
+    "CUSTOMERS_DATA_REQUEST",
+    "CUSTOMERS_REDACT",
+    "SHOP_REDACT",
+  ];
+  const endpoint = "https://" + shop + "/admin/api/2025-10/graphql.json";
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Shopify-Access-Token": accessToken,
+    Accept: "application/json",
+  };
+  const existingResponse = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query: "query ExistingWebhooks { webhookSubscriptions(first: 100) { nodes { id topic uri } } }",
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!existingResponse.ok) throw new Error("Could not inspect Shopify webhook subscriptions");
+  const existingData = await existingResponse.json();
+  if (existingData.errors?.length) throw new Error("Could not inspect Shopify webhook subscriptions");
+  const existing = existingData.data?.webhookSubscriptions?.nodes || [];
+  const errors = [];
+
+  for (const topic of topics) {
+    const callbackUrl = appUrl + "/webhooks/" + topic.toLowerCase().replace(/_/g, "/");
+    const found = existing.some((item) => item.topic === topic && item.uri === callbackUrl);
+    if (found) continue;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        query: "mutation CreateWebhook($topic: WebhookSubscriptionTopic!, $input: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $input) { userErrors { field message } webhookSubscription { id topic uri } } }",
+        variables: { topic, input: { callbackUrl, format: "JSON" } },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) {
+      errors.push(topic + ": HTTP " + response.status);
+      continue;
+    }
+    const result = await response.json();
+    const userErrors = result.data?.webhookSubscriptionCreate?.userErrors || [];
+    if (result.errors?.length || userErrors.length) {
+      errors.push(topic + ": " + (userErrors.map((item) => item.message).join("; ") || "GraphQL error"));
+    }
+  }
+  return errors;
+}
+
 app.get("/auth/callback", asyncRoute(async (req, res) => {
   const shop = normalizeShop(req.query.shop);
   if (!shop || !verifyQueryHmac(req.query, requiredEnv("SHOPIFY_API_SECRET"))) {
@@ -234,8 +290,19 @@ app.get("/auth/callback", asyncRoute(async (req, res) => {
        scopes = VALUES(scopes), updated_at = CURRENT_TIMESTAMP`,
     [shop, encryptToken(tokenData.access_token), tokenData.scope || process.env.SHOPIFY_SCOPES || ""],
   );
+  let webhookWarning = "";
+  try {
+    const webhookErrors = await registerWebhookSubscriptions(shop, tokenData.access_token);
+    if (webhookErrors.length) {
+      webhookWarning = " Installation succeeded, but some webhook subscriptions need attention: " + webhookErrors.join(" | ");
+      console.error("Shopify webhook subscription setup issues for", shop, webhookErrors);
+    }
+  } catch (error) {
+    webhookWarning = " Installation succeeded, but webhook subscriptions could not be verified. Check the app's webhook settings.";
+    console.error("Shopify webhook registration failed for", shop, error.message);
+  }
   console.info("Shopify app installed for", shop);
-  return res.status(200).send("ChachaPrime app connected successfully. You may close this page.");
+  return res.status(200).send("ChachaPrime app connected successfully. You may close this page." + webhookWarning);
 }));
 
 // Shopify webhook endpoints must be configured in the Shopify Partner/Dev Dashboard.
