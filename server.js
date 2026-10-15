@@ -369,7 +369,7 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
         if (!productId || !quantity || !orderId) continue;
 
         const [deals] = await connection.execute(
-          `SELECT id, group_price, currency FROM group_deals
+          `SELECT id, group_price, currency, pricing_mode FROM group_deals
            WHERE shop_domain = ? AND shopify_product_id = ? AND status = 'active'
              AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
              AND ends_at > UTC_TIMESTAMP()
@@ -380,16 +380,17 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
           const linePrice = Number(item.price || deal.group_price);
           const [memberResult] = await connection.execute(
             `INSERT IGNORE INTO group_members
-             (deal_id, shopify_customer_id, shopify_order_id, quantity, amount, currency, status)
-             VALUES (?, ?, ?, ?, ?, ?, 'paid')`,
+             (deal_id, shopify_customer_id, shopify_order_id, quantity, counted_quantity, amount, currency, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'paid')`,
             [deal.id, payload.customer?.id ? String(payload.customer.id) : null, orderId, quantity,
+              deal.pricing_mode === "per_buyer" ? 1 : quantity,
               Number.isFinite(linePrice) ? linePrice * quantity : Number(deal.group_price) * quantity,
               orderCurrency || deal.currency || "USD"],
           );
           if (memberResult.affectedRows > 0) {
             await connection.execute(
               "UPDATE group_deals SET current_quantity = current_quantity + ? WHERE id = ?",
-              [quantity, deal.id],
+              [deal.pricing_mode === "per_buyer" ? 1 : quantity, deal.id],
             );
           }
         }
@@ -409,12 +410,12 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
           const refundQuantity = Math.max(0, Math.floor(Number(refundItem.quantity) || 0));
           if (!productId || !refundQuantity) continue;
           const [deals] = await connection.execute(
-            "SELECT gd.id FROM group_deals gd WHERE gd.shop_domain = ? AND gd.shopify_product_id = ? AND EXISTS (SELECT 1 FROM group_members gm WHERE gm.deal_id = gd.id AND gm.shopify_order_id = ?)",
+            "SELECT gd.id, gd.pricing_mode FROM group_deals gd WHERE gd.shop_domain = ? AND gd.shopify_product_id = ? AND EXISTS (SELECT 1 FROM group_members gm WHERE gm.deal_id = gd.id AND gm.shopify_order_id = ?)",
             [shop, productId, orderId],
           );
           for (const deal of deals) {
             const [members] = await connection.execute(
-              "SELECT id, deal_id, quantity, refunded_quantity FROM group_members WHERE deal_id = ? AND shopify_order_id = ? AND status IN ('paid','refunded') FOR UPDATE",
+              "SELECT id, deal_id, quantity, counted_quantity, refunded_quantity FROM group_members WHERE deal_id = ? AND shopify_order_id = ? AND status IN ('paid','refunded') FOR UPDATE",
               [deal.id, orderId],
             );
             for (const member of members) {
@@ -423,13 +424,16 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
               if (!toRefund) continue;
               const nextRefunded = Number(member.refunded_quantity || 0) + toRefund;
               const nextStatus = nextRefunded >= Number(member.quantity) ? "refunded" : "paid";
+              const contributionToRemove = deal.pricing_mode === "per_buyer"
+                ? (nextRefunded >= Number(member.quantity) ? Number(member.counted_quantity || 0) : 0)
+                : toRefund;
               await connection.execute(
-                "UPDATE group_members SET refunded_quantity = ?, status = ? WHERE id = ?",
-                [nextRefunded, nextStatus, member.id],
+                "UPDATE group_members SET refunded_quantity = ?, counted_quantity = GREATEST(0, counted_quantity - ?), status = ? WHERE id = ?",
+                [nextRefunded, contributionToRemove, nextStatus, member.id],
               );
               await connection.execute(
                 "UPDATE group_deals SET current_quantity = GREATEST(0, current_quantity - ?) WHERE id = ?",
-                [toRefund, member.deal_id],
+                [contributionToRemove, member.deal_id],
               );
               break;
             }
