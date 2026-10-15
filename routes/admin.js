@@ -47,10 +47,22 @@ function createAdminRouter({ getDatabase, shopifyGraphql }) {
 
       const gid = productId.startsWith("gid://") ? productId : "gid://shopify/Product/" + productId;
       const data = await shopifyGraphql(req.shopifySession.shop,
-        "query ProductForDeal($id: ID!) { product(id: $id) { id title handle status } }", { id: gid });
+        "query ProductForDeal($id: ID!) { product(id: $id) { id title handle status priceRangeV2 { minVariantPrice { amount currencyCode } } } }", { id: gid });
       const product = data && data.product;
       if (!product || product.status === "ARCHIVED")
         return res.status(404).json({ error: "Shopify product not found or archived" });
+
+      const retailPrice = Number(product.priceRangeV2?.minVariantPrice?.amount);
+      const retailCurrency = String(product.priceRangeV2?.minVariantPrice?.currencyCode || "").toUpperCase();
+      if (!Number.isFinite(retailPrice) || retailPrice <= 0) {
+        return res.status(400).json({ error: "The Shopify product needs a valid price before creating a deal" });
+      }
+      if (currency !== retailCurrency) {
+        return res.status(400).json({ error: "Deal currency must match the Shopify product currency (" + retailCurrency + ")" });
+      }
+      if (price >= retailPrice) {
+        return res.status(400).json({ error: "Group price must be lower than the product's lowest variant price (" + retailPrice.toFixed(2) + " " + retailCurrency + ")" });
+      }
 
       const title = String(body.title || product.title).trim().slice(0, 255);
       const startsAt = body.starts_at ? new Date(body.starts_at) : null;
@@ -60,11 +72,11 @@ function createAdminRouter({ getDatabase, shopifyGraphql }) {
       const [insert] = await getDatabase().execute(
         `INSERT INTO group_deals
          (shop_domain, shopify_product_id, shopify_product_handle, title, status, pricing_mode, target_quantity,
-          current_quantity, group_price, currency, starts_at, ends_at)
-         VALUES (?, ?, ?, ?, 'draft', ?, ?, 0, ?, ?, ?, ?)`,
+          current_quantity, retail_price, group_price, currency, starts_at, ends_at)
+         VALUES (?, ?, ?, ?, 'draft', ?, ?, 0, ?, ?, ?, ?, ?)`,
         [req.shopifySession.shop, String(product.id.split("/").pop()), String(product.handle), title,
           body.pricing_mode === "per_unit" ? "per_unit" : "per_buyer", target,
-          price.toFixed(2), currency,
+          retailPrice.toFixed(2), price.toFixed(2), currency,
           startsAt ? startsAt.toISOString().slice(0, 19).replace("T", " ") : null,
           endsAt.toISOString().slice(0, 19).replace("T", " ")],
       );
