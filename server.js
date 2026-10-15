@@ -272,6 +272,12 @@ app.post("/webhooks/:topic", asyncRoute(async (req, res) => {
           }
         }
       }
+      // Lock in success once the target has been met; the transaction makes this atomic
+      // with the order event's member and quantity updates.
+      await connection.execute(
+        "UPDATE group_deals SET status = 'successful' WHERE shop_domain = ? AND status = 'active' AND current_quantity >= target_quantity",
+        [shop],
+      );
     } else if (topic === "refunds/create") {
       const orderId = String(payload.order_id || "");
       if (orderId) {
