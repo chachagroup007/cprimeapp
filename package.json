@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js",
+    "check": "node --check server.js && node --check routes/admin.js && node --check lib/shopify-security.js && node --check test/shopify-security.test.js",
     "test": "node --test"
   },
   "engines": {
