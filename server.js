@@ -1,6 +1,8 @@
 require("dotenv").config();
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -9,7 +11,23 @@ const createAdminRouter = require("./routes/admin");
 
 const app = express();
 app.disable("x-powered-by");
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  frameguard: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://cdn.shopify.com"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'self'", "https://admin.shopify.com", "https://*.myshopify.com"],
+      baseUri: ["'self'"],
+      objectSrc: ["'none'"],
+      formAction: ["'self'"],
+    },
+  },
+}));
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -132,6 +150,15 @@ function verifyWebhook(req) {
 function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
+
+app.use(express.static(path.join(__dirname, "public"), { index: false, dotfiles: "deny", maxAge: "1h" }));
+
+app.get("/admin", (_req, res) => {
+  const html = fs.readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
+  const apiKey = String(process.env.SHOPIFY_API_KEY || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  res.type("html").send(html.replace('<meta name="shopify-api-key" content="">',
+    '<meta name="shopify-api-key" content="' + apiKey + '">'));
+});
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true, service: "chachaprime-group-buying", version: "0.3.0" });
