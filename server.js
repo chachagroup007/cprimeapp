@@ -227,7 +227,7 @@ async function registerWebhookSubscriptions(shop, accessToken) {
     method: "POST",
     headers,
     body: JSON.stringify({
-      query: "query ExistingWebhooks { webhookSubscriptions(first: 100) { nodes { id topic uri } } }",
+      query: "query ExistingWebhooks { webhookSubscriptions(first: 100) { nodes { id topic callbackUrl } } }",
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -239,13 +239,13 @@ async function registerWebhookSubscriptions(shop, accessToken) {
 
   for (const topic of topics) {
     const callbackUrl = appUrl + "/webhooks/" + paths[topic];
-    const found = existing.some((item) => item.topic === topic && item.uri === callbackUrl);
+    const found = existing.some((item) => item.topic === topic && item.callbackUrl === callbackUrl);
     if (found) continue;
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        query: "mutation CreateWebhook($topic: WebhookSubscriptionTopic!, $input: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $input) { userErrors { field message } webhookSubscription { id topic uri } } }",
+        query: "mutation CreateWebhook($topic: WebhookSubscriptionTopic!, $input: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $input) { userErrors { field message } webhookSubscription { id topic callbackUrl } } }",
         variables: { topic, input: { callbackUrl, format: "JSON" } },
       }),
       signal: AbortSignal.timeout(15000),
