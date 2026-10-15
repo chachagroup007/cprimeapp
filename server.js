@@ -345,7 +345,23 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
     if (topic === "orders/paid") {
       const orderId = String(payload.admin_graphql_api_id || payload.id || "");
       const orderCurrency = String(payload.currency || "USD").toUpperCase().slice(0, 3);
-      const lineItems = Array.isArray(payload.line_items) ? payload.line_items : [];
+      const rawLineItems = Array.isArray(payload.line_items) ? payload.line_items : [];
+      const groupedItems = new Map();
+      for (const rawItem of rawLineItems) {
+        const productId = String(rawItem.product_id || "");
+        const quantity = Math.max(0, Math.floor(Number(rawItem.quantity) || 0));
+        if (!productId || !quantity) continue;
+        const unitPrice = Number(rawItem.price);
+        const entry = groupedItems.get(productId) || { product_id: productId, quantity: 0, totalAmount: 0 };
+        entry.quantity += quantity;
+        entry.totalAmount += (Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0) * quantity;
+        groupedItems.set(productId, entry);
+      }
+      const lineItems = Array.from(groupedItems.values(), (item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.quantity ? item.totalAmount / item.quantity : 0,
+      }));
 
       for (const item of lineItems) {
         const productId = String(item.product_id || "");
