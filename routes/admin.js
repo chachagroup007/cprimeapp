@@ -77,7 +77,7 @@ function createAdminRouter({ getDatabase, shopifyGraphql }) {
       connection = await getDatabase().getConnection();
       await connection.beginTransaction();
       const [rows] = await connection.execute(
-        "SELECT id, status, starts_at, ends_at FROM group_deals WHERE id = ? AND shop_domain = ? FOR UPDATE",
+        "SELECT id, shopify_product_id, status, starts_at, ends_at FROM group_deals WHERE id = ? AND shop_domain = ? FOR UPDATE",
         [id, req.shopifySession.shop],
       );
       if (!rows.length) {
@@ -95,6 +95,16 @@ function createAdminRouter({ getDatabase, shopifyGraphql }) {
       if (!allowed) {
         await connection.rollback();
         return res.status(409).json({ error: "This deal status transition is not allowed" });
+      }
+      if (status === "active") {
+        const [existing] = await connection.execute(
+          "SELECT id FROM group_deals WHERE shop_domain = ? AND shopify_product_id = ? AND status = 'active' AND id <> ? LIMIT 1 FOR UPDATE",
+          [req.shopifySession.shop, deal.shopify_product_id, id],
+        );
+        if (existing.length) {
+          await connection.rollback();
+          return res.status(409).json({ error: "Another active deal already exists for this product" });
+        }
       }
       if (status === "active" && ((starts !== null && starts > now) || ends <= now)) {
         await connection.rollback();
