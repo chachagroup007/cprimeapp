@@ -84,10 +84,10 @@
       const scheduleDraft = deal.status === "draft" && futureStart;
       action.textContent = scheduleDraft ? "Schedule" :
         deal.status === "draft" ? "Activate" :
-        deal.status === "scheduled" ? "Scheduled" :
+        deal.status === "scheduled" ? "Cancel schedule" :
         deal.status === "active" ? "Cancel" : "—";
-      const nextStatus = deal.status === "active" ? "cancelled" : scheduleDraft ? "scheduled" : "active";
-      action.disabled = !["draft", "active"].includes(deal.status);
+      const nextStatus = ["active", "scheduled"].includes(deal.status) ? "cancelled" : scheduleDraft ? "scheduled" : "active";
+      action.disabled = !["draft", "scheduled", "active"].includes(deal.status);
       action.addEventListener("click", async () => {
         action.disabled = true;
         try {
