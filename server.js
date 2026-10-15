@@ -37,7 +37,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     return callback(null, allowedOrigins.includes(origin));
   },
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json({
@@ -239,7 +239,7 @@ app.get("/auth/callback", asyncRoute(async (req, res) => {
 }));
 
 // Shopify webhook endpoints must be configured in the Shopify Partner/Dev Dashboard.
-app.post("/webhooks/:topic", asyncRoute(async (req, res) => {
+app.post("/webhooks/*", asyncRoute(async (req, res) => {
   if (!verifyWebhook(req)) return res.status(401).json({ error: "Invalid webhook signature" });
 
   const shop = normalizeShop(req.get("X-Shopify-Shop-Domain"));
