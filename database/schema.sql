@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS group_deals (
   shopify_product_handle VARCHAR(255) NOT NULL,
   title VARCHAR(255) NOT NULL,
   status ENUM('draft','scheduled','active','successful','failed','cancelled') NOT NULL DEFAULT 'draft',
+  active_product_key VARCHAR(320) GENERATED ALWAYS AS (CASE WHEN status = 'active' THEN CONCAT(shop_domain, ':', shopify_product_id) ELSE NULL END) STORED,
   pricing_mode ENUM('per_buyer','per_unit') NOT NULL DEFAULT 'per_buyer',
   target_quantity INT UNSIGNED NOT NULL,
   current_quantity INT UNSIGNED NOT NULL DEFAULT 0,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS group_deals (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_deals_shop_status(shop_domain,status),
+  UNIQUE KEY uq_active_product(active_product_key),
   INDEX idx_deals_ends_at(ends_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
