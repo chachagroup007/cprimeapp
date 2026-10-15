@@ -395,23 +395,28 @@ async function shopifyGraphql(shop, query, variables = {}) {
 
 app.use("/api/admin", createAdminRouter({ getDatabase, shopifyGraphql }));
 
-app.get("/api/deals", asyncRoute(async (_req, res) => {
+app.get("/api/deals", asyncRoute(async (req, res) => {
+  const shop = normalizeShop(req.query.shop);
+  if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
   const [deals] = await getDatabase().execute(
     `SELECT id, title, shopify_product_id, status, pricing_mode,
             target_quantity, current_quantity, retail_price, wholesale_price,
             group_price, currency, starts_at, ends_at, created_at
      FROM group_deals
-     WHERE status = 'active'
+     WHERE shop_domain = ? AND status = 'active'
        AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
        AND ends_at > UTC_TIMESTAMP()
      ORDER BY ends_at ASC
      LIMIT 100`,
+    [shop],
   );
   res.set("Cache-Control", "no-store");
   return res.status(200).json({ deals });
 }));
 
 app.get("/api/deals/:id", asyncRoute(async (req, res) => {
+  const shop = normalizeShop(req.query.shop);
+  if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
   if (!/^[1-9]\d{0,19}$/.test(req.params.id)) {
     return res.status(400).json({ error: "Invalid deal id" });
   }
@@ -420,11 +425,11 @@ app.get("/api/deals/:id", asyncRoute(async (req, res) => {
             target_quantity, current_quantity, retail_price, wholesale_price,
             group_price, currency, starts_at, ends_at, created_at
      FROM group_deals
-     WHERE id = ? AND status = 'active'
+     WHERE id = ? AND shop_domain = ? AND status = 'active'
        AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
        AND ends_at > UTC_TIMESTAMP()
      LIMIT 1`,
-    [req.params.id],
+    [req.params.id, shop],
   );
   if (!deals.length) return res.status(404).json({ error: "Deal not found" });
   res.set("Cache-Control", "no-store");
