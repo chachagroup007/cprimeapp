@@ -212,7 +212,7 @@ async function registerWebhookSubscriptions(shop, accessToken) {
     CUSTOMERS_REDACT: "customers/redact",
     SHOP_REDACT: "shop/redact",
   };
-  const endpoint = "https://" + shop + "/admin/api/2025-10/graphql.json";
+  const endpoint = "https://" + shop + "/admin/api/2026-07/graphql.json";
   const headers = {
     "Content-Type": "application/json",
     "X-Shopify-Access-Token": accessToken,
@@ -463,7 +463,7 @@ async function shopifyGraphql(shop, query, variables = {}) {
     throw error;
   }
   const accessToken = decryptToken(rows[0].access_token_encrypted);
-  const response = await fetch("https://" + shop + "/admin/api/2025-10/graphql.json", {
+  const response = await fetch("https://" + shop + "/admin/api/2026-07/graphql.json", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
