@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const crypto = require("node:crypto");
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -7,37 +8,32 @@ const mysql = require("mysql2/promise");
 
 const app = express();
 app.disable("x-powered-by");
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+  .split(",").map((origin) => origin.trim()).filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow non-browser clients (health checks, server-to-server requests).
-      if (!origin) return callback(null, true);
-      return callback(null, allowedOrigins.includes(origin));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
-app.use(express.json({ limit: "256kb" }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    return callback(null, allowedOrigins.includes(origin));
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+app.use(express.json({
+  limit: "512kb",
+  verify(req, _res, buffer) { req.rawBody = Buffer.from(buffer); },
+}));
 
 let pool;
-
 function getDatabase() {
-  const required = ["DB_HOST", "DB_NAME", "DB_USER"];
-  const missing = required.filter((key) => !process.env[key]);
+  const missing = ["DB_HOST", "DB_NAME", "DB_USER"].filter((key) => !process.env[key]);
   if (missing.length) {
     const error = new Error("Database environment is not configured");
     error.code = "DATABASE_CONFIG_MISSING";
     throw error;
   }
-
   if (!pool) {
     pool = mysql.createPool({
       host: process.env.DB_HOST,
@@ -52,8 +48,84 @@ function getDatabase() {
       timezone: "Z",
     });
   }
-
   return pool;
+}
+
+function requiredEnv(key) {
+  const value = process.env[key];
+  if (!value) {
+    const error = new Error("Required application configuration is missing");
+    error.code = "APP_CONFIG_MISSING";
+    throw error;
+  }
+  return value;
+}
+
+function normalizeShop(shop) {
+  return typeof shop === "string" && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(shop)
+    ? shop.toLowerCase()
+    : null;
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function verifyQueryHmac(query, secret) {
+  const received = query.hmac;
+  if (typeof received !== "string" || !/^[a-f0-9]{64}$/i.test(received)) return false;
+  const message = Object.keys(query)
+    .filter((key) => key !== "hmac" && key !== "signature")
+    .sort()
+    .map((key) => `${key}=${Array.isArray(query[key]) ? query[key].join(",") : query[key]}`)
+    .join("&");
+  const calculated = crypto.createHmac("sha256", secret).update(message).digest("hex");
+  return safeEqual(calculated, received.toLowerCase());
+}
+
+function parseCookies(header = "") {
+  const cookies = {};
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    try { cookies[key] = decodeURIComponent(value); } catch { /* ignore malformed cookie */ }
+  }
+  return cookies;
+}
+
+function encryptionKey() {
+  // Uses the app secret as key material; rotating SHOPIFY_API_SECRET requires token re-encryption.
+  return crypto.createHash("sha256")
+    .update("chachaprime-token-encryption-v1:")
+    .update(requiredEnv("SHOPIFY_API_SECRET"))
+    .digest();
+}
+
+function encryptToken(token) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return ["v1", iv.toString("base64"), cipher.getAuthTag().toString("base64"), encrypted.toString("base64")].join(".");
+}
+
+function decryptToken(payload) {
+  const [version, ivText, tagText, dataText] = String(payload || "").split(".");
+  if (version !== "v1" || !ivText || !tagText || !dataText) throw new Error("Invalid encrypted token format");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivText, "base64"));
+  decipher.setAuthTag(Buffer.from(tagText, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(dataText, "base64")), decipher.final()]).toString("utf8");
+}
+
+function verifyWebhook(req) {
+  const secret = process.env.SHOPIFY_API_SECRET;
+  const received = req.get("X-Shopify-Hmac-Sha256");
+  if (!secret || !received || !req.rawBody) return false;
+  const calculated = crypto.createHmac("sha256", secret).update(req.rawBody).digest("base64");
+  return safeEqual(calculated, received);
 }
 
 function asyncRoute(handler) {
@@ -61,82 +133,220 @@ function asyncRoute(handler) {
 }
 
 app.get("/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "chachaprime-group-buying",
-    version: "0.2.0",
-  });
+  res.status(200).json({ ok: true, service: "chachaprime-group-buying", version: "0.3.0" });
 });
 
-app.get(
-  "/ready",
-  asyncRoute(async (_req, res) => {
-    await getDatabase().query("SELECT 1");
-    res.status(200).json({ ok: true, database: "connected" });
-  }),
-);
+app.get("/ready", asyncRoute(async (_req, res) => {
+  await getDatabase().query("SELECT 1");
+  res.status(200).json({ ok: true, database: "connected" });
+}));
 
-// Public storefront API: do not expose drafts or deals outside their live window.
-app.get(
-  "/api/deals",
-  asyncRoute(async (_req, res) => {
-    const [deals] = await getDatabase().execute(
-      `SELECT id, title, shopify_product_id, status, pricing_mode,
-              target_quantity, current_quantity, retail_price, wholesale_price,
-              group_price, currency, starts_at, ends_at, created_at
-       FROM group_deals
-       WHERE status = 'active'
-         AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
-         AND ends_at > UTC_TIMESTAMP()
-       ORDER BY ends_at ASC
-       LIMIT 100`,
+// Start Shopify OAuth installation from Shopify's app installation URL.
+app.get("/auth", asyncRoute(async (req, res) => {
+  const shop = normalizeShop(req.query.shop);
+  if (!shop) return res.status(400).send("A valid *.myshopify.com shop domain is required.");
+
+  const apiKey = requiredEnv("SHOPIFY_API_KEY");
+  const secret = requiredEnv("SHOPIFY_API_SECRET");
+  const appUrl = requiredEnv("SHOPIFY_APP_URL").replace(/\/$/, "");
+  const scopes = (process.env.SHOPIFY_SCOPES || "read_products,read_orders,write_orders")
+    .split(",").map((scope) => scope.trim()).filter(Boolean).join(",");
+  const state = crypto.randomBytes(32).toString("hex");
+
+  res.cookie("cp_oauth_state", state, {
+    httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 10 * 60 * 1000,
+  });
+  const target = new URL(`https://${shop}/admin/oauth/authorize`);
+  target.searchParams.set("client_id", apiKey);
+  target.searchParams.set("scope", scopes);
+  target.searchParams.set("redirect_uri", `${appUrl}/auth/callback`);
+  target.searchParams.set("state", state);
+  target.searchParams.set("grant_options[]", "per-user");
+  // OAuth callback uses HMAC and state validation; secret is intentionally not returned.
+  void secret;
+  return res.redirect(302, target.toString());
+}));
+
+app.get("/auth/callback", asyncRoute(async (req, res) => {
+  const shop = normalizeShop(req.query.shop);
+  if (!shop || !verifyQueryHmac(req.query, requiredEnv("SHOPIFY_API_SECRET"))) {
+    return res.status(400).send("Shopify callback signature is invalid.");
+  }
+  const stateCookie = parseCookies(req.headers.cookie).cp_oauth_state;
+  res.clearCookie("cp_oauth_state", { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+  if (!stateCookie || !safeEqual(stateCookie, req.query.state)) {
+    return res.status(400).send("OAuth state validation failed. Please retry installation.");
+  }
+  if (typeof req.query.code !== "string" || req.query.code.length > 512) {
+    return res.status(400).send("Shopify authorization code is missing.");
+  }
+
+  const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      client_id: requiredEnv("SHOPIFY_API_KEY"),
+      client_secret: requiredEnv("SHOPIFY_API_SECRET"),
+      code: req.query.code,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    console.error("Shopify token exchange failed with HTTP", response.status);
+    return res.status(502).send("Shopify authorization could not be completed. Please retry.");
+  }
+  const tokenData = await response.json();
+  if (typeof tokenData.access_token !== "string" || !tokenData.access_token) {
+    return res.status(502).send("Shopify did not return an access token.");
+  }
+
+  await getDatabase().execute(
+    `INSERT INTO shop_installations (shop_domain, access_token_encrypted, scopes)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE access_token_encrypted = VALUES(access_token_encrypted),
+       scopes = VALUES(scopes), updated_at = CURRENT_TIMESTAMP`,
+    [shop, encryptToken(tokenData.access_token), tokenData.scope || process.env.SHOPIFY_SCOPES || ""],
+  );
+  console.info("Shopify app installed for", shop);
+  return res.status(200).send("ChachaPrime app connected successfully. You may close this page.");
+}));
+
+// Shopify webhook endpoints must be configured in the Shopify Partner/Dev Dashboard.
+app.post("/webhooks/:topic", asyncRoute(async (req, res) => {
+  if (!verifyWebhook(req)) return res.status(401).json({ error: "Invalid webhook signature" });
+
+  const shop = normalizeShop(req.get("X-Shopify-Shop-Domain"));
+  const topic = String(req.get("X-Shopify-Topic") || req.params.topic || "").toLowerCase();
+  const webhookId = req.get("X-Shopify-Webhook-Id");
+  if (!shop || !webhookId || webhookId.length > 128) {
+    return res.status(400).json({ error: "Invalid webhook headers" });
+  }
+
+  const connection = await getDatabase().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [eventResult] = await connection.execute(
+      "INSERT IGNORE INTO shopify_webhook_events (shop_domain, webhook_id, topic) VALUES (?, ?, ?)",
+      [shop, webhookId, topic],
     );
-
-    res.set("Cache-Control", "no-store");
-    res.status(200).json({ deals });
-  }),
-);
-
-app.get(
-  "/api/deals/:id",
-  asyncRoute(async (req, res) => {
-    if (!/^[1-9]\d{0,19}$/.test(req.params.id)) {
-      return res.status(400).json({ error: "Invalid deal id" });
+    if (eventResult.affectedRows === 0) {
+      await connection.commit();
+      return res.status(200).json({ ok: true, duplicate: true });
     }
 
-    const [deals] = await getDatabase().execute(
-      `SELECT id, title, shopify_product_id, status, pricing_mode,
-              target_quantity, current_quantity, retail_price, wholesale_price,
-              group_price, currency, starts_at, ends_at, created_at
-       FROM group_deals
-       WHERE id = ?
-         AND status = 'active'
-         AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
-         AND ends_at > UTC_TIMESTAMP()
-       LIMIT 1`,
-      [req.params.id],
-    );
+    const payload = req.body || {};
+    if (topic === "orders/paid") {
+      const orderId = String(payload.admin_graphql_api_id || payload.id || "");
+      const orderCurrency = String(payload.currency || "USD").toUpperCase().slice(0, 3);
+      const lineItems = Array.isArray(payload.line_items) ? payload.line_items : [];
 
-    if (!deals.length) return res.status(404).json({ error: "Deal not found" });
-    res.set("Cache-Control", "no-store");
-    return res.status(200).json({ deal: deals[0] });
-  }),
-);
+      for (const item of lineItems) {
+        const productId = String(item.product_id || "");
+        const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0));
+        if (!productId || !quantity || !orderId) continue;
+
+        const [deals] = await connection.execute(
+          `SELECT id, group_price, currency FROM group_deals
+           WHERE shop_domain = ? AND shopify_product_id = ? AND status = 'active'
+             AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
+             AND ends_at > UTC_TIMESTAMP()
+           ORDER BY created_at ASC FOR UPDATE`,
+          [shop, productId],
+        );
+        for (const deal of deals) {
+          const linePrice = Number(item.price || deal.group_price);
+          const [memberResult] = await connection.execute(
+            `INSERT IGNORE INTO group_members
+             (deal_id, shopify_customer_id, shopify_order_id, quantity, amount, currency, status)
+             VALUES (?, ?, ?, ?, ?, ?, 'paid')`,
+            [deal.id, payload.customer?.id ? String(payload.customer.id) : null, orderId, quantity,
+              Number.isFinite(linePrice) ? linePrice * quantity : Number(deal.group_price) * quantity,
+              orderCurrency || deal.currency || "USD"],
+          );
+          if (memberResult.affectedRows > 0) {
+            await connection.execute(
+              "UPDATE group_deals SET current_quantity = current_quantity + ? WHERE id = ?",
+              [quantity, deal.id],
+            );
+          }
+        }
+      }
+    } else if (topic === "refunds/create") {
+      const orderId = String(payload.order_id || "");
+      if (orderId) {
+        const [members] = await connection.execute(
+          "SELECT id, deal_id, quantity FROM group_members WHERE shopify_order_id = ? AND status = 'paid' FOR UPDATE",
+          [orderId],
+        );
+        for (const member of members) {
+          await connection.execute("UPDATE group_members SET status = 'refunded' WHERE id = ?", [member.id]);
+          await connection.execute(
+            "UPDATE group_deals SET current_quantity = GREATEST(0, current_quantity - ?) WHERE id = ?",
+            [member.quantity, member.deal_id],
+          );
+        }
+      }
+    } else if (topic === "app/uninstalled") {
+      await connection.execute(
+        "DELETE FROM shop_installations WHERE shop_domain = ?",
+        [shop],
+      );
+    }
+
+    await connection.commit();
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}));
+
+app.get("/api/deals", asyncRoute(async (_req, res) => {
+  const [deals] = await getDatabase().execute(
+    `SELECT id, title, shopify_product_id, status, pricing_mode,
+            target_quantity, current_quantity, retail_price, wholesale_price,
+            group_price, currency, starts_at, ends_at, created_at
+     FROM group_deals
+     WHERE status = 'active'
+       AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
+       AND ends_at > UTC_TIMESTAMP()
+     ORDER BY ends_at ASC
+     LIMIT 100`,
+  );
+  res.set("Cache-Control", "no-store");
+  return res.status(200).json({ deals });
+}));
+
+app.get("/api/deals/:id", asyncRoute(async (req, res) => {
+  if (!/^[1-9]\d{0,19}$/.test(req.params.id)) {
+    return res.status(400).json({ error: "Invalid deal id" });
+  }
+  const [deals] = await getDatabase().execute(
+    `SELECT id, title, shopify_product_id, status, pricing_mode,
+            target_quantity, current_quantity, retail_price, wholesale_price,
+            group_price, currency, starts_at, ends_at, created_at
+     FROM group_deals
+     WHERE id = ? AND status = 'active'
+       AND (starts_at IS NULL OR starts_at <= UTC_TIMESTAMP())
+       AND ends_at > UTC_TIMESTAMP()
+     LIMIT 1`,
+    [req.params.id],
+  );
+  if (!deals.length) return res.status(404).json({ error: "Deal not found" });
+  res.set("Cache-Control", "no-store");
+  return res.status(200).json({ deal: deals[0] });
+}));
 
 app.use((err, _req, res, _next) => {
-  // Keep details in server logs only; never return database/secret details to clients.
   console.error("Request failed:", err.code || "UNEXPECTED_ERROR", err.message);
-  if (err.code === "DATABASE_CONFIG_MISSING") {
+  if (err.code === "DATABASE_CONFIG_MISSING" || err.code === "APP_CONFIG_MISSING") {
     return res.status(503).json({ error: "Service is not configured yet" });
   }
   return res.status(500).json({ error: "Internal server error" });
 });
 
 const port = Number(process.env.PORT || 3000);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error("PORT must be a valid TCP port");
-}
-
-app.listen(port, "0.0.0.0", () => {
-  console.log("ChachaPrime API listening on", port);
-});
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid TCP port");
+app.listen(port, "0.0.0.0", () => console.log("ChachaPrime API listening on", port));
