@@ -5,6 +5,7 @@ const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
+const createAdminRouter = require("./routes/admin");
 
 const app = express();
 app.disable("x-powered-by");
@@ -302,6 +303,44 @@ app.post("/webhooks/:topic", asyncRoute(async (req, res) => {
     connection.release();
   }
 }));
+
+
+async function shopifyGraphql(shop, query, variables = {}) {
+  const [rows] = await getDatabase().execute(
+    "SELECT access_token_encrypted FROM shop_installations WHERE shop_domain = ? LIMIT 1",
+    [shop],
+  );
+  if (!rows.length || !rows[0].access_token_encrypted) {
+    const error = new Error("Shop is not installed");
+    error.code = "SHOP_NOT_INSTALLED";
+    throw error;
+  }
+  const accessToken = decryptToken(rows[0].access_token_encrypted);
+  const response = await fetch("https://" + shop + "/admin/api/2025-10/graphql.json", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    const error = new Error("Shopify Admin API request failed");
+    error.code = "SHOPIFY_API_ERROR";
+    throw error;
+  }
+  const result = await response.json();
+  if (Array.isArray(result.errors) && result.errors.length) {
+    const error = new Error("Shopify Admin API returned GraphQL errors");
+    error.code = "SHOPIFY_GRAPHQL_ERROR";
+    throw error;
+  }
+  return result.data;
+}
+
+app.use("/api/admin", createAdminRouter({ getDatabase, shopifyGraphql }));
 
 app.get("/api/deals", asyncRoute(async (_req, res) => {
   const [deals] = await getDatabase().execute(
