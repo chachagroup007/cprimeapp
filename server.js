@@ -162,7 +162,6 @@ app.get("/auth", asyncRoute(async (req, res) => {
   target.searchParams.set("scope", scopes);
   target.searchParams.set("redirect_uri", `${appUrl}/auth/callback`);
   target.searchParams.set("state", state);
-  target.searchParams.set("grant_options[]", "per-user");
   // OAuth callback uses HMAC and state validation; secret is intentionally not returned.
   void secret;
   return res.redirect(302, target.toString());
@@ -280,17 +279,38 @@ app.post("/webhooks/:topic", asyncRoute(async (req, res) => {
       );
     } else if (topic === "refunds/create") {
       const orderId = String(payload.order_id || "");
-      if (orderId) {
-        const [members] = await connection.execute(
-          "SELECT id, deal_id, quantity FROM group_members WHERE shopify_order_id = ? AND status = 'paid' FOR UPDATE",
-          [orderId],
-        );
-        for (const member of members) {
-          await connection.execute("UPDATE group_members SET status = 'refunded' WHERE id = ?", [member.id]);
-          await connection.execute(
-            "UPDATE group_deals SET current_quantity = GREATEST(0, current_quantity - ?) WHERE id = ?",
-            [member.quantity, member.deal_id],
+      const refundedItems = Array.isArray(payload.refund_line_items) ? payload.refund_line_items : [];
+      if (orderId && refundedItems.length) {
+        for (const refundItem of refundedItems) {
+          const productId = String(refundItem.line_item?.product_id || "");
+          const refundQuantity = Math.max(0, Math.floor(Number(refundItem.quantity) || 0));
+          if (!productId || !refundQuantity) continue;
+          const [deals] = await connection.execute(
+            "SELECT id FROM group_deals WHERE shop_domain = ? AND shopify_product_id = ?",
+            [shop, productId],
           );
+          for (const deal of deals) {
+            const [members] = await connection.execute(
+              "SELECT id, deal_id, quantity, refunded_quantity FROM group_members WHERE deal_id = ? AND shopify_order_id = ? AND status IN ('paid','refunded') FOR UPDATE",
+              [deal.id, orderId],
+            );
+            for (const member of members) {
+              const remaining = Math.max(0, Number(member.quantity) - Number(member.refunded_quantity || 0));
+              const toRefund = Math.min(remaining, refundQuantity);
+              if (!toRefund) continue;
+              const nextRefunded = Number(member.refunded_quantity || 0) + toRefund;
+              const nextStatus = nextRefunded >= Number(member.quantity) ? "refunded" : "paid";
+              await connection.execute(
+                "UPDATE group_members SET refunded_quantity = ?, status = ? WHERE id = ?",
+                [nextRefunded, nextStatus, member.id],
+              );
+              await connection.execute(
+                "UPDATE group_deals SET current_quantity = GREATEST(0, current_quantity - ?) WHERE id = ?",
+                [toRefund, member.deal_id],
+              );
+              break;
+            }
+          }
         }
       }
     } else if (topic === "app/uninstalled") {
