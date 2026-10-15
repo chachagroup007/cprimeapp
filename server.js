@@ -503,9 +503,9 @@ async function refreshDealStatuses() {
 }
 
 app.get("/api/deals", asyncRoute(async (req, res) => {
-  await refreshDealStatuses();
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
+  await refreshDealStatuses();
   const [deals] = await getDatabase().execute(
     `SELECT id, title, shopify_product_id, shopify_product_handle, status, pricing_mode,
             target_quantity, current_quantity, retail_price, wholesale_price,
@@ -523,9 +523,9 @@ app.get("/api/deals", asyncRoute(async (req, res) => {
 }));
 
 app.get("/api/deals/:id", asyncRoute(async (req, res) => {
-  await refreshDealStatuses();
   const shop = normalizeShop(req.query.shop);
   if (!shop) return res.status(400).json({ error: "A valid shop query parameter is required" });
+  await refreshDealStatuses();
   if (!/^[1-9]\d{0,19}$/.test(req.params.id)) {
     return res.status(400).json({ error: "Invalid deal id" });
   }
