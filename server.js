@@ -436,6 +436,10 @@ app.post("/webhooks/*", asyncRoute(async (req, res) => {
       await connection.execute("DELETE FROM shopify_webhook_events WHERE shop_domain = ?", [shop]);
     } else if (topic === "app/uninstalled") {
       await connection.execute(
+        "UPDATE group_deals SET status = 'cancelled' WHERE shop_domain = ? AND status IN ('draft','scheduled','active')",
+        [shop],
+      );
+      await connection.execute(
         "DELETE FROM shop_installations WHERE shop_domain = ?",
         [shop],
       );
