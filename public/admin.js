@@ -2,6 +2,8 @@
   const $ = (s, root = document) => root.querySelector(s);
   const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
   const form = $("#deal-form"), notice = $("#notice"), formStatus = $("#form-status");
+  const productSearch = $("#product-search"), productResults = $("#product-results"), selectedProductId = $("#selected-product-id"), selectedProduct = $("#selected-product");
+  let productSearchTimer = null, productRequest = 0;
   const bodies = [$("#deals-body"), $("#deals-body-alt")].filter(Boolean);
   let allDeals = [], shop = "";
 
@@ -95,6 +97,8 @@
     $("#stat-total").textContent = String(allDeals.length);
     $("#stat-active").textContent = String(allDeals.filter(d=>d.status==="active").length);
     $("#stat-units").textContent = String(allDeals.reduce((sum,d)=>sum+Number(d.current_quantity || 0),0));
+    $("#stat-scheduled").textContent = String(allDeals.filter(d=>d.status==="scheduled").length);
+    $("#stat-successful").textContent = String(allDeals.filter(d=>d.status==="successful").length);
     renderDeals(); setNotice("Connected. Your group-deal data is up to date.","success");
     if ($("#settings-connection")) { $("#settings-connection").textContent="Connected"; $("#settings-connection").className="setting-state"; }
   }
@@ -109,11 +113,64 @@
   $$("[data-go]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.go)));
   $$(".search-box input").forEach(input=>input.addEventListener("input",e=>{$$(".search-box input").forEach(other=>{if(other!==e.target)other.value=e.target.value;});renderDeals();}));
   $$(".filter-wrap select").forEach(select=>select.addEventListener("change",e=>{$$(".filter-wrap select").forEach(other=>{if(other!==e.target)other.value=e.target.value;});renderDeals();}));
+
+  function clearProductSelection() {
+    selectedProductId.value = "";
+    selectedProduct.hidden = true;
+    selectedProduct.replaceChildren();
+  }
+  function renderProductResults(products) {
+    productResults.replaceChildren();
+    if (!products.length) {
+      const empty = document.createElement("div"); empty.className = "product-result-empty";
+      empty.textContent = "No matching active products found."; productResults.appendChild(empty);
+    } else products.forEach(product => {
+      const option = document.createElement("button"); option.type = "button"; option.className = "product-option"; option.setAttribute("role","option");
+      if (product.image) { const img = document.createElement("img"); img.src = product.image; img.alt = ""; img.loading = "lazy"; option.appendChild(img); }
+      const info = document.createElement("span"); info.className = "product-option-info";
+      const title = document.createElement("strong"); title.textContent = product.title;
+      const meta = document.createElement("small"); meta.textContent = "Product #" + product.id + " · " + money(product.price,product.currency);
+      info.append(title,meta); option.appendChild(info);
+      option.addEventListener("click",() => {
+        selectedProductId.value = product.id; productSearch.value = product.title; productResults.replaceChildren(); productResults.classList.remove("is-open");
+        selectedProduct.replaceChildren();
+        if (product.image) { const img = document.createElement("img"); img.src = product.image; img.alt = ""; selectedProduct.appendChild(img); }
+        const copy = document.createElement("span"); copy.className = "selected-product-copy";
+        const name = document.createElement("strong"); name.textContent = product.title;
+        const detail = document.createElement("small"); detail.textContent = "Retail price " + money(product.price,product.currency) + " · Currency " + product.currency;
+        copy.append(name,detail); selectedProduct.appendChild(copy);
+        const currency = form.elements.currency;
+        if ([...currency.options].some(o=>o.value===product.currency)) currency.value = product.currency;
+        selectedProduct.hidden = false;
+      });
+      productResults.appendChild(option);
+    });
+    productResults.classList.add("is-open");
+  }
+  productSearch.addEventListener("input", () => {
+    clearProductSelection();
+    const query = productSearch.value.trim();
+    clearTimeout(productSearchTimer); productResults.replaceChildren();
+    if (query.length < 2) { productResults.classList.remove("is-open"); return; }
+    const request = ++productRequest;
+    productSearchTimer = setTimeout(async () => {
+      try {
+        const data = await api("/api/admin/products?q=" + encodeURIComponent(query));
+        if (request === productRequest) renderProductResults(Array.isArray(data.products) ? data.products : []);
+      } catch (e) {
+        if (request === productRequest) { const err = document.createElement("div"); err.className = "product-result-empty"; err.textContent = e.message; productResults.replaceChildren(err); productResults.classList.add("is-open"); }
+      }
+    }, 280);
+  });
+  document.addEventListener("click", event => {
+    if (!event.target.closest("#product-results") && event.target !== productSearch) productResults.classList.remove("is-open");
+  });
+
   form.addEventListener("submit",async event=>{
     event.preventDefault(); const values = new FormData(form), end = values.get("ends_at"), start = values.get("starts_at");
-    const payload = {shopify_product_id:String(values.get("shopify_product_id")||"").trim(),group_price:Number(values.get("group_price")),target_quantity:Number(values.get("target_quantity")),currency:values.get("currency"),pricing_mode:values.get("pricing_mode"),ends_at:end?new Date(end).toISOString():"",starts_at:start?new Date(start).toISOString():null};
+    const payload = {shopify_product_id:String(values.get("shopify_product_id")||"").trim(),title:String(values.get("title")||"").trim(),group_price:Number(values.get("group_price")),target_quantity:Number(values.get("target_quantity")),currency:values.get("currency"),pricing_mode:values.get("pricing_mode"),ends_at:end?new Date(end).toISOString():"",starts_at:start?new Date(start).toISOString():null};
     const submit = form.querySelector('button[type="submit"]'); submit.disabled=true; formStatus.textContent="Creating draft…";
-    try { await api("/api/admin/deals",{method:"POST",body:JSON.stringify(payload)}); form.reset(); formStatus.textContent="Draft created successfully."; await loadDeals(); showView("deals"); }
+    try { await api("/api/admin/deals",{method:"POST",body:JSON.stringify(payload)}); form.reset(); selectedProductId.value=""; selectedProduct.hidden=true; selectedProduct.replaceChildren(); formStatus.textContent="Draft created successfully."; await loadDeals(); showView("deals"); }
     catch(e){formStatus.textContent=e.message;setNotice(e.message,"error");}
     finally{submit.disabled=false;}
   });
@@ -121,6 +178,7 @@
   const params = new URLSearchParams(location.search); shop = params.get("shop") || "";
   if ($("#settings-store")) $("#settings-store").textContent = shop || "No store domain detected";
   const hash = location.hash.slice(1); if(hash) showView(hash);
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "dashboard"));
   window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "dashboard"));
   if (!shop.endsWith(".myshopify.com")) {
     setNotice("Open this app from Shopify Admin → Apps using the installed store. Direct browser access cannot create an embedded session.","error");
