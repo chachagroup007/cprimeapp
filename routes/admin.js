@@ -4,6 +4,23 @@ const { requireShopifySession } = require("../lib/shopify-security");
 function createAdminRouter({ getDatabase, shopifyGraphql }) {
   const router = express.Router();
 
+  router.get("/products", requireShopifySession, async (req, res, next) => {
+    try {
+      const queryText = String(req.query.q || "").trim().slice(0, 100);
+      if (queryText.length < 2) return res.json({ products: [] });
+      const safeQuery = queryText.replace(/[\\:*()]/g, " ").trim();
+      const data = await shopifyGraphql(req.shopifySession.shop,
+        "query DealProductSearch($query: String!) { products(first: 15, query: $query, sortKey: TITLE) { nodes { id title handle status featuredImage { url altText } priceRangeV2 { minVariantPrice { amount currencyCode } } } } }",
+        { query: "title:*" + safeQuery + "*" });
+      const products = (data?.products?.nodes || []).filter(p => p.status === "ACTIVE").map(p => ({
+        id: String(p.id.split("/").pop()), title: p.title, handle: p.handle,
+        image: p.featuredImage?.url || "", price: p.priceRangeV2?.minVariantPrice?.amount || "",
+        currency: p.priceRangeV2?.minVariantPrice?.currencyCode || ""
+      }));
+      return res.json({ products });
+    } catch (error) { next(error); }
+  });
+
   router.get("/deals", requireShopifySession, async (req, res, next) => {
     try {
       await getDatabase().execute(
