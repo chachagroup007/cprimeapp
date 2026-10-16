@@ -31,3 +31,5 @@ body{background:#f6f7fb;color:#202638}
 @media(max-width:1150px){.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:740px){.main-area{padding:0 14px}.topbar{position:static}.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.welcome-row{padding:18px}.view{max-width:100%}}
 @media(max-width:430px){.stats-grid{grid-template-columns:1fr}.main-area{padding:0 10px}}
+
+.heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}@media(max-width:740px){.heading-actions{width:100%}.heading-actions .button{flex:1}}
