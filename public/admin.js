@@ -174,6 +174,17 @@
     catch(e){formStatus.textContent=e.message;setNotice(e.message,"error");}
     finally{submit.disabled=false;}
   });
+
+  $("#export-deals").addEventListener("click", () => {
+    const columns = ["title","shopify_product_id","status","current_quantity","target_quantity","group_price","currency","starts_at","ends_at","created_at"];
+    const escapeCsv = value => '"' + String(value == null ? "" : value).replace(/"/g,'""') + '"';
+    const rows = [columns, ...allDeals.map(deal => columns.map(key => deal[key] ?? ""))];
+    const csv = "\\uFEFF" + rows.map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
+    const url = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8;"}));
+    const link = document.createElement("a"); link.href = url; link.download = "chachaprime-group-deals.csv";
+    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  });
+
   $("#refresh").addEventListener("click",()=>loadDeals().catch(e=>setNotice(e.message,"error")));
   const params = new URLSearchParams(location.search); shop = params.get("shop") || "";
   if ($("#settings-store")) $("#settings-store").textContent = shop || "No store domain detected";
